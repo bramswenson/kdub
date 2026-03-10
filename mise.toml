@@ -1,0 +1,5 @@
+[settings]
+experimental = true
+
+[tasks]
+# Tasks are defined as file tasks in mise-tasks/gpg/

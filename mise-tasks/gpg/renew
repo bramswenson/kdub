@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#MISE description="Extend expiration of existing subkeys"
+#USAGE arg "identity" help="Identity name or key ID"
+#USAGE flag "--expiration <exp>" default="2y" help="New expiration date"
+set -euo pipefail
+
+source "$MISE_PROJECT_ROOT/lib/common.sh"
+
+IDENTITY="${usage_identity:?Identity argument required}"
+EXPIRATION="${usage_expiration:-2y}"
+
+check_deps
+
+# Try to find key in persistent storage
+export GNUPGHOME="$PERSISTENT_GNUPGHOME"
+if [[ ! -d "$GNUPGHOME" ]]; then
+    error "Persistent GNUPGHOME not found: $GNUPGHOME"
+    error "Restore from backup first: mise run gpg:restore -- /dev/sdX"
+    exit 1
+fi
+
+KEYID="$(validate_identity "$IDENTITY")" || exit 1
+KEYFP="$(gpg --with-colons --list-keys "$KEYID" 2>/dev/null | grep '^fpr:' | head -1 | cut -d: -f10)"
+
+info "Renewing subkeys for: $IDENTITY"
+info "Key: $KEYID"
+info "New expiration: $EXPIRATION"
+
+# Get all subkey fingerprints
+SUBKEY_FPS="$(gpg --with-colons --list-keys "$KEYFP" | grep '^fpr:' | tail -n +2 | cut -d: -f10 | tr '\n' ' ')"
+
+if [[ -z "$SUBKEY_FPS" ]]; then
+    error "No subkeys found for $KEYID"
+    exit 1
+fi
+
+info "Subkeys to renew: $SUBKEY_FPS"
+
+# Prompt for certify key passphrase
+read -r -s -p "Enter certify key passphrase: " CERTIFY_PASS
+echo ""
+
+# Extend expiration on all subkeys
+info "Extending subkey expirations..."
+echo "$CERTIFY_PASS" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+    --quick-set-expire "$KEYFP" "$EXPIRATION" $SUBKEY_FPS
+
+success "Subkey expirations extended to $EXPIRATION"
+
+# Display updated key listing
+echo ""
+gpg -K "$KEYFP"
+echo ""
+
+# Export updated public key
+info "Exporting updated public key..."
+gpg --armor --export "$KEYFP" > "${PERSISTENT_GNUPGHOME}/public-key-${KEYFP}.asc"
+success "Public key exported to ${PERSISTENT_GNUPGHOME}/public-key-${KEYFP}.asc"
+
+# Update metadata
+save_metadata "$KEYFP" \
+    "renewed" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "expiration" "$EXPIRATION"
+
+# Offer to update backup
+echo ""
+if confirm "Update backup?" "y"; then
+    mise run gpg:backup -- "$KEYID"
+fi
+
+echo ""
+warn "Remember to distribute the updated public key to contacts/keyservers."
+success "Renewal complete for $KEYID"

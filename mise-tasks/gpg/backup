@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+#MISE description="Backup GPG keys to Tails persistent storage"
+#USAGE arg "keyid" help="Key ID to backup (e.g. 0xABCD1234)"
+set -euo pipefail
+
+source "$MISE_PROJECT_ROOT/lib/common.sh"
+
+KEYID="${usage_keyid:?Key ID argument required}"
+
+# Get fingerprint
+KEYFP="$(gpg --with-colons --list-keys "$KEYID" 2>/dev/null | grep '^fpr:' | head -1 | cut -d: -f10)"
+if [[ -z "$KEYFP" ]]; then
+    error "Key not found: $KEYID"
+    exit 1
+fi
+
+info "Backing up key: $KEYID (fingerprint: $KEYFP)"
+
+# Create export directory
+EXPORT_DIR="$(mktemp -d /tmp/gpg-export-XXXXXX)"
+trap 'rm -rf "$EXPORT_DIR"' EXIT
+
+# Export keys
+info "Exporting certify key (secret)..."
+gpg --armor --export-secret-keys "$KEYFP" > "${EXPORT_DIR}/certify-key.asc"
+
+info "Exporting subkeys (secret)..."
+gpg --armor --export-secret-subkeys "$KEYFP" > "${EXPORT_DIR}/subkeys.asc"
+
+info "Exporting public key..."
+gpg --armor --export "$KEYFP" > "${EXPORT_DIR}/public-key.asc"
+
+info "Exporting ownertrust..."
+gpg --export-ownertrust > "${EXPORT_DIR}/ownertrust.txt"
+
+success "Keys exported to temp directory"
+
+# Import into Tails persistent GNUPGHOME
+info "Importing into persistent GNUPGHOME: $PERSISTENT_GNUPGHOME"
+mkdir -p "$PERSISTENT_GNUPGHOME"
+chmod 700 "$PERSISTENT_GNUPGHOME"
+
+# Copy hardened config if not present
+if [[ ! -f "${PERSISTENT_GNUPGHOME}/gpg.conf" ]]; then
+    cp "${MISE_PROJECT_ROOT}/config/gpg.conf" "${PERSISTENT_GNUPGHOME}/"
+    cp "${MISE_PROJECT_ROOT}/config/gpg-agent.conf" "${PERSISTENT_GNUPGHOME}/"
+    info "Copied hardened GPG config to persistent storage"
+fi
+
+GNUPGHOME="$PERSISTENT_GNUPGHOME" gpg --import "${EXPORT_DIR}/public-key.asc" 2>/dev/null || true
+GNUPGHOME="$PERSISTENT_GNUPGHOME" gpg --import "${EXPORT_DIR}/certify-key.asc" 2>/dev/null || true
+GNUPGHOME="$PERSISTENT_GNUPGHOME" gpg --import-ownertrust "${EXPORT_DIR}/ownertrust.txt" 2>/dev/null || true
+
+success "Keys imported into persistent storage"
+
+# Update metadata
+save_metadata "$KEYFP" \
+    "backup_persistent" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "backup_persistent_path" "$PERSISTENT_GNUPGHOME"
+
+echo ""
+success "Backup complete for $KEYID"

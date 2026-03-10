@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="Show connected YubiKey details and auto-detected key type"
+set -euo pipefail
+
+source "$MISE_PROJECT_ROOT/lib/common.sh"
+
+check_deps
+detect_yubikey
+
+echo ""
+echo "=== YubiKey Info ==="
+echo ""
+ykman info
+echo ""
+
+echo "=== OpenPGP Card Status ==="
+echo ""
+gpg --card-status 2>/dev/null || warn "No OpenPGP applet data (card may be fresh/reset)"
+echo ""
+
+KEY_TYPE="$(best_key_type)"
+success "Auto-detected key type: $KEY_TYPE"

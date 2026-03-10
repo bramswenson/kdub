@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+#MISE description="Configure YubiKey PINs, KDF, touch policy, and card metadata"
+#USAGE flag "--identity <id>" help="GPG identity or key ID (for name/login fields)"
+#USAGE flag "--url <url>" help="Public key URL to store on card"
+#USAGE flag "--skip-kdf" help="Skip KDF setup even on YubiKey 5"
+#USAGE flag "--skip-touch" help="Skip touch policy setup even on YubiKey 5"
+set -euo pipefail
+
+source "$MISE_PROJECT_ROOT/lib/common.sh"
+
+IDENTITY="${usage_identity:-}"
+URL="${usage_url:-}"
+SKIP_KDF="${usage_skip_kdf:-false}"
+SKIP_TOUCH="${usage_skip_touch:-false}"
+
+check_deps
+detect_yubikey
+
+# Show current card status
+echo ""
+info "Current card status:"
+gpg --card-status 2>/dev/null || warn "Card status not available (may be normal for a fresh/reset YubiKey)"
+echo ""
+
+# Ask about PIN state - can't reliably detect without risking lockout
+echo "Are the PINs currently at factory defaults?"
+echo "  (Admin PIN: 12345678, User PIN: 123456)"
+echo ""
+if confirm "PINs are at factory defaults?" "y"; then
+    PINS_ARE_DEFAULT=true
+else
+    PINS_ARE_DEFAULT=false
+fi
+
+if [[ "$PINS_ARE_DEFAULT" == "true" ]]; then
+    # --- KDF setup (must happen while Admin PIN is still default) ---
+    if [[ "$SKIP_KDF" != "true" ]] && is_yubikey5; then
+        info "Enabling KDF (PIN hashing) on YubiKey..."
+        gpg --command-fd=0 --pinentry-mode loopback --edit-card <<KDF_EOF
+admin
+kdf-setup
+12345678
+q
+KDF_EOF
+        success "KDF enabled"
+    fi
+
+    # --- Generate and change PINs ---
+    ADMIN_PIN="$(tr -dc '0-9' < /dev/urandom | head -c 8)"
+    USER_PIN="$(tr -dc '0-9' < /dev/urandom | head -c 6)"
+
+    echo ""
+    echo "=============================================="
+    echo "  YUBIKEY PINs - RECORD THESE NOW"
+    echo "=============================================="
+    echo ""
+    echo "  Admin PIN: $ADMIN_PIN"
+    echo "  User PIN:  $USER_PIN"
+    echo ""
+    echo "  Default Admin PIN was: 12345678"
+    echo "  Default User PIN was:  123456"
+    echo ""
+    echo "=============================================="
+    echo ""
+
+    if ! confirm "Have you recorded both PINs?"; then
+        error "Aborting. Please record the PINs before continuing."
+        exit 1
+    fi
+
+    # Change Admin PIN from default
+    info "Changing Admin PIN..."
+    gpg --command-fd=0 --pinentry-mode loopback --edit-card <<ADMIN_EOF
+admin
+passwd
+3
+12345678
+${ADMIN_PIN}
+${ADMIN_PIN}
+q
+q
+ADMIN_EOF
+    success "Admin PIN changed"
+
+    # Change User PIN from default
+    info "Changing User PIN..."
+    gpg --command-fd=0 --pinentry-mode loopback --edit-card <<USER_EOF
+admin
+passwd
+1
+123456
+${USER_PIN}
+${USER_PIN}
+q
+q
+USER_EOF
+    success "User PIN changed"
+else
+    # PINs already changed - prompt for Admin PIN (needed for metadata steps)
+    echo ""
+    read -r -s -p "Enter current Admin PIN: " ADMIN_PIN
+    echo ""
+fi
+
+# --- Set cardholder name (if --identity provided) ---
+if [[ -n "$IDENTITY" ]]; then
+    UID_STRING="$(gpg --with-colons --list-keys "$IDENTITY" 2>/dev/null | grep '^uid:' | head -1 | cut -d: -f10)"
+    if [[ -n "$UID_STRING" ]]; then
+        CARD_NAME="$(echo "$UID_STRING" | sed 's/ *<.*//')"
+        CARD_LAST="$(echo "$CARD_NAME" | awk '{print $NF}')"
+        CARD_FIRST="$(echo "$CARD_NAME" | sed "s/ *${CARD_LAST}\$//")"
+
+        info "Setting cardholder name: $CARD_FIRST $CARD_LAST"
+        gpg --command-fd=0 --pinentry-mode loopback --edit-card <<NAME_EOF
+admin
+name
+${CARD_LAST}
+${CARD_FIRST}
+${ADMIN_PIN}
+q
+NAME_EOF
+        success "Cardholder name set"
+
+        # Set login attribute (email)
+        EMAIL="$(echo "$UID_STRING" | sed 's/.*<\(.*\)>.*/\1/')"
+        if [[ -n "$EMAIL" && "$EMAIL" != "$UID_STRING" ]]; then
+            info "Setting login attribute: $EMAIL"
+            gpg --command-fd=0 --pinentry-mode loopback --edit-card <<LOGIN_EOF
+admin
+login
+${EMAIL}
+${ADMIN_PIN}
+quit
+LOGIN_EOF
+            success "Login attribute set"
+        fi
+    else
+        warn "Could not find identity: $IDENTITY"
+    fi
+fi
+
+# --- Set public key URL (if --url provided) ---
+if [[ -n "$URL" ]]; then
+    info "Setting public key URL: $URL"
+    gpg --command-fd=0 --pinentry-mode loopback --edit-card <<URL_EOF
+admin
+url
+${URL}
+${ADMIN_PIN}
+quit
+URL_EOF
+    success "Public key URL set"
+fi
+
+# --- Touch policy (YubiKey 5 only) ---
+if [[ "$SKIP_TOUCH" != "true" ]] && is_yubikey5; then
+    info "Enabling touch requirement for crypto operations..."
+    for op in sig dec aut; do
+        ykman openpgp keys set-touch "$op" on <<< "$ADMIN_PIN"
+    done
+    success "Touch requirement enabled for sign, decrypt, authenticate"
+fi
+
+# --- Ensure scdaemon.conf is in place ---
+local_scdaemon="${GNUPGHOME:-$HOME/.gnupg}/scdaemon.conf"
+project_scdaemon="${MISE_PROJECT_ROOT}/config/scdaemon.conf"
+if [[ -f "$project_scdaemon" ]] && ! grep -q 'disable-ccid' "$local_scdaemon" 2>/dev/null; then
+    cp "$project_scdaemon" "$local_scdaemon"
+    info "Installed scdaemon.conf with disable-ccid"
+fi
+
+# --- Verify ---
+echo ""
+info "Verification - updated card status:"
+gpg --card-status
+echo ""
+
+success "YubiKey setup complete"

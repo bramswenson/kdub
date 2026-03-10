@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#MISE description="Install required YubiKey and GPG packages on Tails"
+set -euo pipefail
+
+source "$MISE_PROJECT_ROOT/lib/common.sh"
+
+PACKAGES=(
+    yubikey-personalization
+    yubikey-manager
+    scdaemon
+    pcscd
+)
+
+# Verify sudo is available (requires Administration Password set at Tails Welcome Screen)
+#if ! sudo -n true 2>/dev/null; then
+#    error "sudo is not available."
+#    error "On Tails, you must set an Administration Password at the Welcome Screen before boot."
+#    error "Reboot Tails, click '+' on the Welcome Screen, set an Administration Password, then try again."
+#    exit 1
+#fi
+
+info "Installing required packages: ${PACKAGES[*]}"
+sudo apt update
+sudo apt install -y "${PACKAGES[@]}"
+
+# Start pcscd if not running
+if ! systemctl is-active --quiet pcscd 2>/dev/null; then
+    info "Starting pcscd..."
+    sudo systemctl start pcscd
+fi
+
+# Verify all tools are available
+info "Verifying installed tools..."
+for cmd in gpg ykman; do
+    if command -v "$cmd" &>/dev/null; then
+        success "$cmd: $(command -v "$cmd")"
+    else
+        error "$cmd: not found"
+    fi
+done
+
+if command -v scdaemon &>/dev/null || [[ -x /usr/lib/gnupg/scdaemon ]]; then
+    success "scdaemon: available"
+else
+    error "scdaemon: not found"
+fi
+
+if systemctl is-active --quiet pcscd 2>/dev/null; then
+    success "pcscd: running"
+else
+    error "pcscd: not running"
+fi
+
+echo ""
+warn "IMPORTANT: To make these packages persist across Tails reboots,"
+warn "open 'Additional Software' in Tails settings and mark each package"
+warn "as 'Install Every Time'."
+success "Dependency installation complete"
