@@ -1,5 +1,9 @@
 [settings]
 experimental = true
+env_shell_expand = true
 
-[tasks]
-# Tasks are defined as file tasks in mise-tasks/gpg/
+[env]
+YK_GPG_SRC_DIR = "{{ config_root }}/src"
+
+[tools]
+"aqua:bats-core/bats-core" = "latest"

@@ -1,38 +1,55 @@
-# GPG + YubiKey Management for Tails OS
+# yk-gpg
 
-Automated GPG key lifecycle management with YubiKey hardware tokens on Tails OS.
-Based on [drduh/YubiKey-Guide](https://github.com/drduh/YubiKey-Guide), wrapped in [mise](https://mise.jdx.dev/) tasks for repeatable multi-identity workflows.
+Cross-platform GPG key lifecycle management with OpenPGP smart card support (YubiKey and others). Based on [drduh/YubiKey-Guide](https://github.com/drduh/YubiKey-Guide), wrapped in [mise](https://mise.jdx.dev/) tasks.
 
-## Prerequisites
+**Primary target**: Tails OS (Debian, GnuPG 2.4+)
+**Also supported**: Ubuntu/Debian, Fedora, Arch Linux, macOS (Homebrew)
 
-### Tails Persistent Storage Features
+## What it does
 
-Enable these in Tails persistent storage settings:
-
-- **GnuPG** - persists `~/.gnupg` across reboots
-- **Additional Software** - persists installed packages
-- **Persistent Folder** - general persistent storage
-- **Dotfiles** - persists shell configuration (for mise activation)
-
-### Hardware
-
-- YubiKey 4 NFC (RSA up to 4096 only)
-- YubiKey 5 NFC fw 5.2.3+ (RSA 2048-4096, ed25519, cv25519)
+- Create GPG identities with certify key + sign/encrypt/auth subkeys
+- Backup and restore keys to/from persistent storage
+- Provision subkeys to OpenPGP smart cards (YubiKey, Nitrokey, etc.)
+- Renew expiring subkeys or rotate to new key material
+- Publish public keys to keyservers, GitHub, WKD, or files
+- Ephemeral RAM-backed GNUPGHOME — key material never touches disk during generation
 
 ## Installation
 
 ```bash
-# Install mise task runner
-./install-mise.sh
-source ~/.bashrc
+# Clone the repo
+git clone https://github.com/bramswenson/yk-gpg.git
+cd yk-gpg/src
 
-# Install required packages (yubikey-manager, scdaemon, pcscd, etc.)
-mise run gpg:install-deps
+# Install mise (if not already installed)
+./install-mise.sh
+source ~/.bashrc  # or restart your shell
+
+# Initialize directories and config
+mise run setup:init
+
+# Install system packages (gpg, scdaemon, pcscd, jq, ykman)
+mise run setup:install-deps
 ```
 
-After installing packages, open Tails "Additional Software" settings and mark each package as "Install Every Time" so they persist across reboots.
+### Tails OS
 
-## Creating an Identity
+After each Tails boot (packages don't persist):
+
+```bash
+cd /path/to/yk-gpg/src
+mise run tails:install-deps
+```
+
+On first use, wire XDG directories into Tails persistent storage:
+
+```bash
+mise run tails:setup-persistence
+```
+
+## Usage
+
+### Creating an identity
 
 **Disable networking before generating keys.**
 
@@ -41,194 +58,168 @@ After installing packages, open Tails "Additional Software" settings and mark ea
 mise run gpg:create -- "Alice Smith <alice@example.com>"
 
 # Explicit key type and expiration
-mise run gpg:create -- "Work Identity <work@corp.com>" --key-type rsa4096 --expiration 1y
+mise run gpg:create -- "Work <work@corp.com>" --key-type rsa4096 --expiration 1y
 ```
 
-This will:
-1. Create a certify-only master key (no expiration)
-2. Generate a strong passphrase for the certify key (displayed once - record it!)
-3. Create sign, encrypt, and authenticate subkeys (with expiration)
-4. Optionally continue to backup
+This creates a certify-only master key (no expiration), generates a strong passphrase (displayed once — record it), and creates sign/encrypt/auth subkeys with expiration.
 
-## Backing Up Keys
+### Backing up keys
 
 ```bash
-# Backup to Tails persistent storage
-mise run gpg:backup -- 0xABCD1234
+mise run gpg:backup -- 0xKEYID
 ```
 
-Keys are exported and imported into the Tails persistent GNUPGHOME (`/home/bram/TailsData/gnupg/`), which is encrypted at rest by Tails.
-
-## Setting Up a YubiKey
-
-Configure a fresh or factory-reset YubiKey before transferring keys:
+### Restoring from backup
 
 ```bash
-# Basic setup: configure PINs, KDF, and touch policy
-mise run gpg:yubikey-setup
-
-# With identity metadata and public key URL
-mise run gpg:yubikey-setup -- --identity 0xABCD1234 --url https://keys.openpgp.org/vks/v1/by-fingerprint/FINGERPRINT
+mise run gpg:restore -- FINGERPRINT
 ```
 
-This will:
-1. Detect YubiKey model and firmware
-2. Enable KDF (PIN hashing) on YubiKey 5
-3. Generate and set new Admin PIN (8 digits) and User PIN (6 digits)
-4. Set cardholder name and login from identity (if provided)
-5. Set public key URL on card (if provided)
-6. Enable touch requirement for crypto operations on YubiKey 5
-
-## Provisioning a YubiKey
-
-Transfer GPG subkeys to a YubiKey that has already been set up:
+### Setting up a smart card
 
 ```bash
-mise run gpg:yubikey-provision -- 0xABCD1234
+# Configure PINs, KDF, cardholder info
+mise run card:setup -- 0xKEYID
+
+# Transfer subkeys to card
+mise run card:provision -- 0xKEYID
+
+# YubiKey 5+: enable touch requirement
+mise run yubikey:setup-touch
 ```
 
-This will:
-1. Verify the YubiKey has been configured (rejects factory-default PINs)
-2. Transfer sign, encrypt, and authenticate subkeys to the card
-3. Verify the transfer succeeded (keys show as stubs)
-4. Save provisioning metadata
-
-## Publishing Your Public Key
-
-After creating keys, publish your public key to make it discoverable:
+### Publishing your public key
 
 ```bash
-# Upload to keys.openpgp.org (requires email verification after upload)
-mise run gpg:publish -- 0xABCD1234 --keyserver
-
-# Upload to GitHub (requires GITHUB_TOKEN env var)
-mise run gpg:publish -- 0xABCD1234 --github
-
-# Export to a file
-mise run gpg:publish -- 0xABCD1234 --file /tmp/pubkey.asc
-
-# Export for Web Key Directory
-mise run gpg:publish -- 0xABCD1234 --wkd /path/to/webroot
-
-# Interactive mode (asks which destinations)
-mise run gpg:publish -- 0xABCD1234
+mise run gpg:publish -- 0xKEYID --keyserver    # keys.openpgp.org
+mise run gpg:publish -- 0xKEYID --github       # requires GITHUB_TOKEN
+mise run gpg:publish -- 0xKEYID --file pubkey.asc
+mise run gpg:publish -- 0xKEYID --wkd /path/to/webroot
 ```
 
-## Daily Usage
-
-After provisioning, your YubiKey works for:
-
-### Signing
-```bash
-echo "test" | gpg --armor --clearsign
-git commit -S -m "signed commit"
-```
-
-### Encrypting
-```bash
-gpg --recipient alice@example.com --encrypt document.txt
-gpg --decrypt document.txt.gpg
-```
-
-### SSH Authentication
-```bash
-# GPG agent provides SSH key from YubiKey auth subkey
-export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
-ssh-add -L  # should show your GPG auth key
-ssh user@host
-```
-
-## Managing Multiple YubiKeys
-
-When switching between YubiKeys with different identities:
+### Key lifecycle
 
 ```bash
-# Tell gpg-agent to learn the new card
-gpg-connect-agent "scd serialno" "learn --force" /bye
-
-# Verify the correct key is active
-gpg --card-status
-```
-
-## Key Lifecycle Management
-
-### Renewing Subkeys (extending expiration)
-
-Use when subkeys are approaching expiration but you don't need new key material:
-
-```bash
+# Extend subkey expiration
 mise run gpg:renew -- "Alice Smith" --expiration 2y
-```
 
-### Rotating Subkeys (generating new ones)
+# Rotate to new subkeys (optionally revoke old)
+mise run gpg:rotate -- "Alice Smith" --revoke-old
 
-Use annually or when you suspect key compromise. Creates new subkeys and optionally revokes old ones:
-
-```bash
-mise run gpg:rotate -- "Alice Smith"
-mise run gpg:rotate -- "Alice Smith" --key-type ed25519 --expiration 2y
-```
-
-### When to Renew vs Rotate
-
-| Scenario | Action |
-|---|---|
-| Subkeys expiring, no concerns | Renew |
-| Annual maintenance | Rotate |
-| Suspected compromise | Rotate + revoke old |
-| Upgrading algorithm (RSA→ed25519) | Rotate |
-
-## Listing Identities
-```bash
+# List all managed identities
 mise run gpg:list
 ```
 
-Shows all managed identities with:
-- Key IDs and fingerprints
-- Subkey expiration status (highlights expired or expiring-within-90-days)
-- Associated YubiKey serial numbers
-- Current YubiKey status if connected
+| Scenario | Action |
+|---|---|
+| Subkeys expiring, no concerns | `gpg:renew` |
+| Annual maintenance | `gpg:rotate` |
+| Suspected compromise | `gpg:rotate --revoke-old` |
+| Upgrading algorithm | `gpg:rotate --key-type ed25519` |
 
-## YubiKey Reset
-
-Factory reset the OpenPGP applet (destroys all keys on the YubiKey):
+### Smart card management
 
 ```bash
-mise run gpg:yubikey-reset
+mise run card:info         # OpenPGP card status
+mise run yubikey:info      # YubiKey-specific details (via ykman)
+mise run card:reset        # Factory reset (DESTRUCTIVE)
 ```
 
-## YubiKey Compatibility
+## Daily usage
 
-| Feature | YubiKey 4 NFC | YubiKey 5 NFC (fw 5.2.3+) |
+After provisioning, your smart card works for signing, encryption, and SSH:
+
+```bash
+# Sign
+echo "test" | gpg --armor --clearsign
+git commit -S -m "signed commit"
+
+# Encrypt/decrypt
+gpg --recipient alice@example.com --encrypt doc.txt
+gpg --decrypt doc.txt.gpg
+
+# SSH via gpg-agent
+export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
+ssh user@host
+```
+
+## Task reference
+
+| Namespace | Task | Description |
 |---|---|---|
-| RSA 2048 | Yes | Yes |
+| `setup:` | `init` | Initialize directories and config files |
+| | `install-deps` | Install system packages (cross-platform) |
+| `gpg:` | `create` | Create identity with certify key + subkeys |
+| | `backup` | Backup keys to data directory |
+| | `restore` | Restore keys from backup |
+| | `list` | List managed identities and status |
+| | `renew` | Extend subkey expiration |
+| | `rotate` | Generate new subkeys (full rotation) |
+| | `publish` | Publish public key (keyserver/GitHub/WKD/file) |
+| `card:` | `info` | Show OpenPGP smart card status |
+| | `setup` | Configure PINs, KDF, cardholder metadata |
+| | `provision` | Transfer subkeys to smart card |
+| | `reset` | Factory reset OpenPGP applet |
+| `yubikey:` | `info` | YubiKey details via ykman |
+| | `setup-touch` | Configure touch policy |
+| `tails:` | `install-deps` | Install packages (must run each boot) |
+| | `setup-persistence` | Wire XDG dirs into Tails persistent storage |
+
+## Project structure
+
+```
+src/
+  lib/           # Shared libraries (platform.sh, common.sh)
+  config/        # GPG config templates (gpg.conf, dirmngr.conf)
+  mise-tasks/    # All task scripts (gpg/, card/, yubikey/, tails/, setup/)
+  mise.toml      # Distribution mise config
+  install-mise.sh
+test/
+  unit/          # Bats unit tests
+  integration/   # Bats integration tests (GPG lifecycle, card mocks)
+  ci/            # Tails QEMU test infrastructure
+```
+
+## Platform support
+
+| Feature | Tails | Linux | macOS |
+|---|---|---|---|
+| GPG key management | Yes | Yes | Yes |
+| Smart card ops | Yes | Yes | Yes |
+| Ephemeral GNUPGHOME | /dev/shm (tmpfs) | /dev/shm or XDG_RUNTIME_DIR | RAM disk |
+| Package install | `tails:install-deps` | `setup:install-deps` | `setup:install-deps` (Homebrew) |
+| Tor proxy | Built-in | Optional (`YK_GPG_TOR_PROXY`) | Optional |
+
+## YubiKey compatibility
+
+| Feature | YubiKey 4 | YubiKey 5 (fw 5.2.3+) |
+|---|---|---|
 | RSA 4096 | Yes | Yes |
 | ed25519 / cv25519 | No | Yes |
-| NIST P-256/P-384 | No | Yes |
 | Touch policy | No | Yes |
 | KDF (PIN hashing) | No | Yes |
 
-The scripts auto-detect the connected YubiKey and select the best algorithm.
+Key type is auto-detected from the connected YubiKey.
 
-## Security Considerations
+## Security considerations
 
 - **Disable networking** before generating or handling key material
-- **Certify key passphrase** is the most critical secret - store it in a physically secure location (e.g., safe, separate from YubiKey)
-- **PINs** protect YubiKey operations - record them securely but separately from the YubiKey
-- **Persistent storage** on Tails is encrypted at rest, but the certify key is still accessible when Tails is running
-- The tmpfs-based temporary GNUPGHOME ensures key material never touches persistent disk during generation
+- **Certify key passphrase** is the most critical secret — store it in a physically secure location, separate from the YubiKey
+- **PINs** protect smart card operations — record them separately from the card
+- Ephemeral GNUPGHOME on tmpfs ensures key material never touches persistent disk during generation
+- **Batch mode**: `--passphrase` flag values are visible in process listings. Use CI secrets or a trusted environment. Interactive mode (default) is not affected
+- On Tails, persistent storage is encrypted at rest
 
 ## Troubleshooting
 
 ### "No YubiKey detected"
-- Ensure the YubiKey is properly inserted
-- Run `sudo systemctl start pcscd`
-- Try `ykman info` to verify basic connectivity
+- Ensure the YubiKey is inserted
+- `sudo systemctl start pcscd`
+- `ykman info` to verify connectivity
 
 ### "gpg: selecting card failed"
-- Kill and restart gpg-agent: `gpgconf --kill gpg-agent`
-- Restart scdaemon: `gpgconf --kill scdaemon`
-- Remove stale scdaemon socket: `rm ~/.gnupg/S.scdaemon`
+- `gpgconf --kill gpg-agent`
+- `gpgconf --kill scdaemon`
 
 ### "Operation not supported by device"
 - Your YubiKey may not support the requested algorithm
@@ -236,9 +227,8 @@ The scripts auto-detect the connected YubiKey and select the best algorithm.
 
 ### "gpg: signing failed: No secret key"
 - Ensure the correct YubiKey is inserted
-- Run `gpg-connect-agent "scd serialno" "learn --force" /bye`
-- Check `gpg --card-status`
+- `gpg-connect-agent "scd serialno" "learn --force" /bye`
 
-### Permission errors
-- Ensure pcscd is running: `sudo systemctl start pcscd`
-- Check udev rules are in place for YubiKey access
+## License
+
+MIT
