@@ -1,6 +1,7 @@
 use directories::ProjectDirs;
 use kdub_lib::doctor::{RealSystemDeps, run_doctor};
 use kdub_lib::error::KdubError;
+use kdub_lib::tails::detect_tails_environment;
 
 use crate::cli::{DoctorArgs, GlobalOpts};
 
@@ -32,7 +33,8 @@ pub fn run(args: &DoctorArgs, global: &GlobalOpts) -> CmdResult {
         proj_dirs.data_dir().to_path_buf()
     };
 
-    let report = run_doctor(&deps, &config_dir, &data_dir)?;
+    let tails = detect_tails_environment();
+    let report = run_doctor(&deps, &config_dir, &data_dir, tails)?;
 
     if args.json {
         let json = report.to_json()?;

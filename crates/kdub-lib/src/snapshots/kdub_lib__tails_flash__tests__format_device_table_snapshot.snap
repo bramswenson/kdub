@@ -1,0 +1,7 @@
+---
+source: crates/kdub-lib/src/tails_flash.rs
+expression: output
+---
+Removable devices:
+  /dev/sdb     Samsung Flash Drive         14.9 GB  (not mounted)
+  /dev/sdc     SanDisk Ultra               29.8 GB  (mounted at /mnt/usb)

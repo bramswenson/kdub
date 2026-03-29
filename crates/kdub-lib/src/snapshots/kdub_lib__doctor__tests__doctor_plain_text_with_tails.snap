@@ -1,0 +1,23 @@
+---
+source: crates/kdub-lib/src/doctor.rs
+expression: report.to_plain_text()
+---
+System check:
+  gpg          2.4.5        ok
+  gpg-agent    2.4.5        ok
+  scdaemon     2.4.5        ok
+  pcscd        running      ok
+  ykman        5.4.0        ok
+
+Config:
+  config dir   [TEMPDIR]/config    ok
+  data dir     [TEMPDIR]/data    ok
+  platform     [PLATFORM]
+
+Tails environment:
+  Tails version    7.5          ok
+  Persistent       mounted    ok
+  Network          disconnected ok
+  kdub location    persistent ok
+
+All checks passed.

@@ -3,6 +3,7 @@ mod completions;
 mod doctor;
 mod init;
 mod key;
+mod tails;
 mod update;
 
 use std::path::PathBuf;
@@ -53,6 +54,7 @@ pub fn dispatch(cli: Cli, shutdown: &Arc<AtomicBool>) -> eyre::Result<ExitCode> 
         Command::Completions(ref args) => completions::run(args),
         Command::Key { ref cmd } => key::run(cmd, &cli.global),
         Command::Card { ref cmd } => card::run(cmd, &cli.global),
+        Command::Tails { ref cmd } => tails::run(cmd, &cli.global),
         Command::Update(_) => unreachable!(),
     };
 

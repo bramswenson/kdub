@@ -47,6 +47,8 @@ pub enum DepStatus {
     Daemon { daemon_status: DaemonStatus },
     /// Not found.
     Missing,
+    /// Recommended but not required for kdub itself.
+    Recommended { reason: String },
 }
 
 /// Full doctor report.
@@ -59,6 +61,8 @@ pub struct DoctorReport {
     pub data_dir_exists: bool,
     pub platform: String,
     pub overall_ok: bool,
+    /// Tails-specific environment info, if running on Tails.
+    pub tails: Option<crate::tails::TailsEnvironment>,
 }
 
 // ---------------------------------------------------------------------------
@@ -241,50 +245,54 @@ fn check_scdaemon_real() -> Option<DepInfo> {
 /// Run all doctor checks and produce a report.
 ///
 /// This is pure logic — all system interaction goes through the `SystemDeps` trait.
+/// The Tails environment is passed in as a parameter, not detected inside this function.
 pub fn run_doctor(
     deps: &dyn SystemDeps,
     config_dir: &Path,
     data_dir: &Path,
+    tails: Option<crate::tails::TailsEnvironment>,
 ) -> Result<DoctorReport, KdubError> {
     let mut checks: Vec<DepCheck> = Vec::new();
-    let mut any_required_missing = false;
+    let any_required_missing = false;
 
-    // gpg — required
+    // gpg — recommended
     match deps.check_command("gpg") {
         Some(info) => checks.push(DepCheck {
             name: "gpg".to_string(),
-            required: true,
+            required: false,
             status: DepStatus::Ok {
                 version: info.version,
                 path: info.path,
             },
         }),
         None => {
-            any_required_missing = true;
             checks.push(DepCheck {
                 name: "gpg".to_string(),
-                required: true,
-                status: DepStatus::Missing,
+                required: false,
+                status: DepStatus::Recommended {
+                    reason: "needed for git signing, encrypt/decrypt".to_string(),
+                },
             });
         }
     }
 
-    // gpg-agent — required
+    // gpg-agent — recommended
     match deps.check_command("gpg-agent") {
         Some(info) => checks.push(DepCheck {
             name: "gpg-agent".to_string(),
-            required: true,
+            required: false,
             status: DepStatus::Ok {
                 version: info.version,
                 path: info.path,
             },
         }),
         None => {
-            any_required_missing = true;
             checks.push(DepCheck {
                 name: "gpg-agent".to_string(),
-                required: true,
-                status: DepStatus::Missing,
+                required: false,
+                status: DepStatus::Recommended {
+                    reason: "needed for agent operations, SSH authentication".to_string(),
+                },
             });
         }
     }
@@ -316,23 +324,6 @@ pub fn run_doctor(
         },
     });
 
-    // jq — optional
-    match deps.check_command("jq") {
-        Some(info) => checks.push(DepCheck {
-            name: "jq".to_string(),
-            required: false,
-            status: DepStatus::Ok {
-                version: info.version,
-                path: info.path,
-            },
-        }),
-        None => checks.push(DepCheck {
-            name: "jq".to_string(),
-            required: false,
-            status: DepStatus::Missing,
-        }),
-    }
-
     // ykman — optional
     match deps.check_command("ykman") {
         Some(info) => checks.push(DepCheck {
@@ -360,6 +351,7 @@ pub fn run_doctor(
         data_dir_exists: data_dir.exists(),
         platform,
         overall_ok: !any_required_missing,
+        tails,
     })
 }
 
@@ -384,6 +376,9 @@ impl DoctorReport {
                 DepStatus::Missing => {
                     let label = if dep.required { "MISSING" } else { "not found" };
                     ("—".to_string(), label.to_string())
+                }
+                DepStatus::Recommended { reason } => {
+                    ("—".to_string(), format!("recommended ({reason})"))
                 }
             };
             out.push_str(&format!(
@@ -421,6 +416,34 @@ impl DoctorReport {
 
         out.push_str(&format!("  {:<12} {}\n", "platform", self.platform));
 
+        if let Some(ref tails) = self.tails {
+            out.push_str("\nTails environment:\n");
+            out.push_str(&format!(
+                "  {:<16} {:<12} ok\n",
+                "Tails version", tails.version
+            ));
+            let persist_status = if tails.persistence_mounted {
+                "mounted    ok"
+            } else {
+                "not mounted  MISSING"
+            };
+            out.push_str(&format!("  {:<16} {}\n", "Persistent", persist_status));
+            if tails.network_connected {
+                out.push_str(&format!(
+                    "  {:<16} {}\n",
+                    "Network", "connected  WARN  (disable networking for key ceremony!)"
+                ));
+            } else {
+                out.push_str(&format!("  {:<16} {}\n", "Network", "disconnected ok"));
+            }
+            let kdub_status = if tails.kdub_on_persistent {
+                "persistent ok"
+            } else {
+                "not persistent WARN"
+            };
+            out.push_str(&format!("  {:<16} {}\n", "kdub location", kdub_status));
+        }
+
         out.push('\n');
         if self.overall_ok {
             out.push_str("All checks passed.\n");
@@ -451,11 +474,15 @@ impl DoctorReport {
                     serde_json::json!({ "status": status_str })
                 }
                 DepStatus::Missing => serde_json::json!({ "status": "missing" }),
+                DepStatus::Recommended { reason } => serde_json::json!({
+                    "status": "recommended",
+                    "reason": reason,
+                }),
             };
             deps_map.insert(dep.name.clone(), value);
         }
 
-        let report = serde_json::json!({
+        let mut report = serde_json::json!({
             "dependencies": deps_map,
             "config": {
                 "config_dir": self.config_dir.to_string_lossy(),
@@ -466,6 +493,15 @@ impl DoctorReport {
             },
             "status": if self.overall_ok { "ok" } else { "error" },
         });
+
+        if let Some(ref tails) = self.tails {
+            report["tails"] = serde_json::json!({
+                "version": tails.version,
+                "persistence_mounted": tails.persistence_mounted,
+                "network_connected": tails.network_connected,
+                "kdub_on_persistent": tails.kdub_on_persistent,
+            });
+        }
 
         serde_json::to_string_pretty(&report).map_err(|e| KdubError::Config(e.to_string()))
     }
@@ -501,13 +537,6 @@ mod tests {
                 Some(DepInfo {
                     version: "2.4.5".to_string(),
                     path: PathBuf::from("/usr/bin/gpg-agent"),
-                }),
-            );
-            commands.insert(
-                "jq".to_string(),
-                Some(DepInfo {
-                    version: "1.7.1".to_string(),
-                    path: PathBuf::from("/usr/bin/jq"),
                 }),
             );
             commands.insert(
@@ -552,16 +581,16 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::create_dir_all(&data).unwrap();
 
-        let report = run_doctor(&deps, &config, &data).unwrap();
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
 
         assert!(report.overall_ok);
         assert!(report.config_dir_exists);
         assert!(report.data_dir_exists);
-        assert_eq!(report.dependencies.len(), 6); // gpg, gpg-agent, scdaemon, pcscd, jq, ykman
+        assert_eq!(report.dependencies.len(), 5); // gpg, gpg-agent, scdaemon, pcscd, ykman
     }
 
     #[test]
-    fn test_missing_required_dep() {
+    fn test_missing_recommended_dep() {
         let mut deps = MockDeps::all_present();
         deps.commands.insert("gpg".to_string(), None);
 
@@ -571,21 +600,21 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::create_dir_all(&data).unwrap();
 
-        let report = run_doctor(&deps, &config, &data).unwrap();
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
 
-        assert!(!report.overall_ok);
+        // gpg is recommended, not required — overall still ok
+        assert!(report.overall_ok);
         let gpg = report
             .dependencies
             .iter()
             .find(|d| d.name == "gpg")
             .unwrap();
-        assert!(matches!(gpg.status, DepStatus::Missing));
+        assert!(matches!(gpg.status, DepStatus::Recommended { .. }));
     }
 
     #[test]
     fn test_missing_optional_dep() {
         let mut deps = MockDeps::all_present();
-        deps.commands.insert("jq".to_string(), None);
         deps.commands.insert("ykman".to_string(), None);
 
         let tmp = tempfile::tempdir().unwrap();
@@ -594,9 +623,9 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::create_dir_all(&data).unwrap();
 
-        let report = run_doctor(&deps, &config, &data).unwrap();
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
 
-        // Still overall ok — jq and ykman are optional
+        // Still overall ok — ykman is optional
         assert!(report.overall_ok);
     }
 
@@ -611,7 +640,7 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::create_dir_all(&data).unwrap();
 
-        let report = run_doctor(&deps, &config, &data).unwrap();
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
 
         assert!(report.overall_ok);
         let pcscd = report
@@ -638,7 +667,7 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::create_dir_all(&data).unwrap();
 
-        let report = run_doctor(&deps, &config, &data).unwrap();
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
 
         // pcscd is not required, so overall still ok
         assert!(report.overall_ok);
@@ -661,7 +690,7 @@ mod tests {
         let config = PathBuf::from("/nonexistent/config/kdub");
         let data = PathBuf::from("/nonexistent/data/kdub");
 
-        let report = run_doctor(&deps, &config, &data).unwrap();
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
 
         assert!(!report.config_dir_exists);
         assert!(!report.data_dir_exists);
@@ -678,7 +707,7 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::create_dir_all(&data).unwrap();
 
-        let report = run_doctor(&deps, &config, &data).unwrap();
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
         let text = report.to_plain_text();
 
         assert!(text.contains("System check:"));
@@ -692,7 +721,7 @@ mod tests {
     }
 
     #[test]
-    fn test_plain_text_missing_dep() {
+    fn test_plain_text_missing_recommended_dep() {
         let mut deps = MockDeps::all_present();
         deps.commands.insert("gpg".to_string(), None);
 
@@ -702,11 +731,11 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::create_dir_all(&data).unwrap();
 
-        let report = run_doctor(&deps, &config, &data).unwrap();
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
         let text = report.to_plain_text();
 
-        assert!(text.contains("MISSING"));
-        assert!(text.contains("Some required dependencies are missing."));
+        assert!(text.contains("recommended"));
+        assert!(text.contains("All checks passed."));
     }
 
     #[test]
@@ -718,7 +747,7 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::create_dir_all(&data).unwrap();
 
-        let report = run_doctor(&deps, &config, &data).unwrap();
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
         let json_str = report.to_json().unwrap();
 
         // Should be valid JSON
@@ -731,7 +760,7 @@ mod tests {
     }
 
     #[test]
-    fn test_json_output_missing_dep() {
+    fn test_json_output_missing_recommended_dep() {
         let mut deps = MockDeps::all_present();
         deps.commands.insert("gpg".to_string(), None);
 
@@ -741,12 +770,12 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::create_dir_all(&data).unwrap();
 
-        let report = run_doctor(&deps, &config, &data).unwrap();
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
         let json_str = report.to_json().unwrap();
 
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(parsed["status"], "error");
-        assert_eq!(parsed["dependencies"]["gpg"]["status"], "missing");
+        assert_eq!(parsed["status"], "ok");
+        assert_eq!(parsed["dependencies"]["gpg"]["status"], "recommended");
     }
 
     #[test]
@@ -787,5 +816,105 @@ mod tests {
         assert!(!looks_like_version("abc"));
         assert!(!looks_like_version(""));
         assert!(!looks_like_version("123")); // no dot
+    }
+
+    #[test]
+    fn test_missing_gpg_is_recommended_not_required() {
+        let mut deps = MockDeps::all_present();
+        deps.commands.insert("gpg".to_string(), None);
+
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("config");
+        let data = tmp.path().join("data");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::create_dir_all(&data).unwrap();
+
+        let report = run_doctor(&deps, &config, &data, None).unwrap();
+        assert!(report.overall_ok); // gpg is recommended, not required
+        let gpg = report
+            .dependencies
+            .iter()
+            .find(|d| d.name == "gpg")
+            .unwrap();
+        assert!(matches!(gpg.status, DepStatus::Recommended { .. }));
+    }
+
+    #[test]
+    fn test_doctor_plain_text_with_tails() {
+        let deps = MockDeps::all_present();
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("config");
+        let data = tmp.path().join("data");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::create_dir_all(&data).unwrap();
+
+        let tails = Some(crate::tails::TailsEnvironment {
+            version: "7.5".to_string(),
+            persistence_mounted: true,
+            network_connected: false,
+            kdub_on_persistent: true,
+        });
+
+        let report = run_doctor(&deps, &config, &data, tails).unwrap();
+
+        let mut settings = insta::Settings::clone_current();
+        // Redact tempdir paths (Linux: /tmp/.tmpXXXXXX, macOS: /var/folders/.../T/.tmpXXXXXX)
+        settings.add_filter(r"[^\s]+/\.tmp\w+", "[TEMPDIR]");
+        settings.add_filter(r"\b(linux|macos)\b", "[PLATFORM]");
+        settings.bind(|| {
+            insta::assert_snapshot!(report.to_plain_text());
+        });
+    }
+
+    #[test]
+    fn test_doctor_json_with_tails() {
+        let deps = MockDeps::all_present();
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("config");
+        let data = tmp.path().join("data");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::create_dir_all(&data).unwrap();
+
+        let tails = Some(crate::tails::TailsEnvironment {
+            version: "7.5".to_string(),
+            persistence_mounted: true,
+            network_connected: false,
+            kdub_on_persistent: true,
+        });
+
+        let report = run_doctor(&deps, &config, &data, tails).unwrap();
+        let json = report.to_json().unwrap();
+
+        let mut settings = insta::Settings::clone_current();
+        // Redact tempdir paths (Linux: /tmp/.tmpXXXXXX, macOS: /var/folders/.../T/.tmpXXXXXX)
+        settings.add_filter(r#"[^\s"]+/\.tmp\w+"#, "[TEMPDIR]");
+        settings.add_filter(r#""(linux|macos)""#, r#""[PLATFORM]""#);
+        settings.bind(|| {
+            insta::assert_snapshot!(json);
+        });
+    }
+
+    #[test]
+    fn test_tails_environment_in_report() {
+        let deps = MockDeps::all_present();
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("config");
+        let data = tmp.path().join("data");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::create_dir_all(&data).unwrap();
+
+        let tails = Some(crate::tails::TailsEnvironment {
+            version: "7.5".to_string(),
+            persistence_mounted: true,
+            network_connected: false,
+            kdub_on_persistent: true,
+        });
+
+        let report = run_doctor(&deps, &config, &data, tails).unwrap();
+        assert!(report.tails.is_some());
+        let t = report.tails.unwrap();
+        assert_eq!(t.version, "7.5");
+        assert!(t.persistence_mounted);
+        assert!(!t.network_connected);
     }
 }

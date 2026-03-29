@@ -7,10 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
-/// Ed25519 public key for verifying signed release archives.
-/// Generated with `zipsign gen-key` — the corresponding private key
-/// is stored as a GitHub Actions secret and never committed to the repo.
-const ZIPSIGN_PUBLIC_KEY: [u8; 32] = *include_bytes!("../zipsign-public.key");
+use kdub_lib::defaults::ZIPSIGN_PUBLIC_KEY;
 
 const CHECK_INTERVAL: Duration = Duration::from_secs(86400); // 24 hours
 const CHECK_TIMEOUT: Duration = Duration::from_secs(3);

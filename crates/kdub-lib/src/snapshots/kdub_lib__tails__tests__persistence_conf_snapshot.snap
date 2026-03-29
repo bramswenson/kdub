@@ -1,0 +1,7 @@
+---
+source: crates/kdub-lib/src/tails.rs
+expression: conf
+---
+/home/amnesia/Persistent	source=Persistent
+/home/amnesia/.gnupg	source=gnupg
+/home/amnesia	source=dotfiles,link

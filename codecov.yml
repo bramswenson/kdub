@@ -1,0 +1,19 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1% # allow 1% drop from base
+    patch:
+      default:
+        target: 75%
+
+ignore:
+  # Hardware I/O — requires physical smart card, tested via MockCardExecutor
+  - "crates/kdub-lib/src/card.rs"
+  # macOS RAM disk creation — platform-specific, untestable on Linux CI
+  - "crates/kdub-lib/src/ephemeral.rs"
+  # CLI card handlers — heavy interactive I/O + hardware, error paths tested via assert_cmd
+  - "crates/kdub/src/commands/card.rs"
+  # Self-update — GitHub API + self_update lib + binary replacement, core logic tested
+  - "crates/kdub/src/updater.rs"

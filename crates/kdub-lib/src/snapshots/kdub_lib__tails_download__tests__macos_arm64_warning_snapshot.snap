@@ -1,0 +1,6 @@
+---
+source: crates/kdub-lib/src/tails_download.rs
+expression: MACOS_ARM64_WARNING
+---
+Note: This Tails image is x86_64 only. It cannot boot on Apple Silicon Macs.
+You'll need an x86_64 PC to boot from the USB, or use a virtual machine.

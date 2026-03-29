@@ -161,18 +161,18 @@ fn test_doctor_reports_missing_deps() {
     fs::create_dir_all(&config).unwrap();
     fs::create_dir_all(&data).unwrap();
 
-    let report = run_doctor(&MockMissingGpg, &config, &data).unwrap();
+    let report = run_doctor(&MockMissingGpg, &config, &data, None).unwrap();
 
-    // gpg is required and missing → overall_ok must be false
-    assert!(!report.overall_ok);
+    // gpg is recommended, not required → overall_ok is still true
+    assert!(report.overall_ok);
 
-    // gpg should be reported as Missing
+    // gpg should be reported as Recommended
     let gpg = report
         .dependencies
         .iter()
         .find(|d| d.name == "gpg")
         .expect("gpg should be in the report");
-    assert!(matches!(gpg.status, DepStatus::Missing));
+    assert!(matches!(gpg.status, DepStatus::Recommended { .. }));
 
     // gpg-agent should be reported as Ok
     let agent = report
@@ -181,14 +181,6 @@ fn test_doctor_reports_missing_deps() {
         .find(|d| d.name == "gpg-agent")
         .expect("gpg-agent should be in the report");
     assert!(matches!(agent.status, DepStatus::Ok { .. }));
-
-    // Optional deps missing should not affect overall_ok (but gpg being missing does)
-    let jq = report
-        .dependencies
-        .iter()
-        .find(|d| d.name == "jq")
-        .expect("jq should be in the report");
-    assert!(matches!(jq.status, DepStatus::Missing));
 }
 
 #[test]

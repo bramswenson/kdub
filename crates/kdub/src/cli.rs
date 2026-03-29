@@ -28,17 +28,10 @@ use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
   kdub key publish 0xKEYID --keyserver   Publish to keys.openpgp.org
   kdub key publish 0xKEYID --github      Upload to GitHub
 
-\x1b[1mRecommended setup:\x1b[0m
-  For key generation and smart card provisioning, use Tails OS on an
-  air-gapped machine with an encrypted USB for long-term backup:
-
-    1. Download and verify Tails:  https://tails.net/install/
-    2. Boot Tails, set up encrypted persistent storage
-    3. Download kdub into persistent storage
-    4. Disable networking → create keys → provision to YubiKey
-    5. Store the Tails USB as your encrypted offline backup
-
-  Automated Tails setup is planned: https://github.com/bramswenson/kdub/issues/3
+\x1b[1mTails USB setup:\x1b[0m
+  kdub tails download                    Download and verify Tails ISO
+  sudo kdub tails flash                  Write Tails to USB
+  sudo kdub tails persist                Create encrypted persistence (Linux)
 
 \x1b[1mMore info:\x1b[0m
   https://github.com/bramswenson/kdub
@@ -101,6 +94,11 @@ pub enum Command {
     },
     /// Check for and install kdub updates
     Update(UpdateArgs),
+    /// Tails USB creation and setup
+    Tails {
+        #[command(subcommand)]
+        cmd: TailsCommand,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -452,4 +450,60 @@ pub struct UpdateArgs {
     /// Skip confirmation prompt
     #[arg(short, long)]
     pub yes: bool,
+}
+
+// ---------------------------------------------------------------------------
+// tails subcommands
+// ---------------------------------------------------------------------------
+
+#[derive(Subcommand)]
+pub enum TailsCommand {
+    /// Download and verify the latest Tails ISO image
+    ///
+    /// Downloads to: ~/.cache/kdub/tails/tails-amd64-<VERSION>.img
+    #[command(long_about = "Download and verify the latest Tails ISO image.\n\n\
+        The ISO is cached at ~/.cache/kdub/tails/tails-amd64-<VERSION>.img\n\
+        and re-used on subsequent runs unless --force is specified.")]
+    Download(TailsDownloadArgs),
+    /// Write a verified Tails image to a USB device
+    Flash(TailsFlashArgs),
+    /// Create encrypted persistent storage on a Tails USB
+    Persist(TailsPersistArgs),
+}
+
+#[derive(Args)]
+pub struct TailsDownloadArgs {
+    /// Re-download even if cached
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Args)]
+pub struct TailsFlashArgs {
+    /// Use this device (skips interactive prompt)
+    #[arg(long)]
+    pub device: Option<PathBuf>,
+
+    /// Skip typing device path confirmation (scripting)
+    #[arg(long)]
+    pub yes: bool,
+}
+
+#[derive(Args)]
+pub struct TailsPersistArgs {
+    /// LUKS passphrase (visible in process listings)
+    #[arg(long)]
+    pub passphrase: Option<String>,
+
+    /// Read passphrase from stdin
+    #[arg(long)]
+    pub passphrase_stdin: bool,
+
+    /// Target USB device (must already have Tails flashed)
+    #[arg(long)]
+    pub device: Option<PathBuf>,
+
+    /// Skip kdub config pre-seeding
+    #[arg(long)]
+    pub skip_preseed: bool,
 }

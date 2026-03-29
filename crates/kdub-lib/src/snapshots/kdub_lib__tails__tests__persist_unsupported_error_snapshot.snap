@@ -1,0 +1,9 @@
+---
+source: crates/kdub-lib/src/tails.rs
+expression: msg
+---
+Persistent storage requires Linux (cryptsetup/parted).
+Options:
+  - Boot from the USB and configure persistence via Tails Welcome Screen
+  - Run this command from a Linux machine or VM
+  - See: https://github.com/bramswenson/kdub/issues/7 (VM guide)

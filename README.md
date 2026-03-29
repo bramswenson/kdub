@@ -38,10 +38,10 @@ installer or install manually:
 curl -sSf https://raw.githubusercontent.com/bramswenson/kdub/main/scripts/install-deps.sh | bash
 
 # Or manually:
-# Debian/Ubuntu: apt install gnupg scdaemon pcscd libccid yubikey-manager jq
-# Fedora:        dnf install gnupg2 pcsc-lite yubikey-manager jq
-# Arch:          pacman -S gnupg pcsclite ccid yubikey-manager jq
-# macOS:         brew install gnupg pinentry-mac yubikey-manager jq
+# Debian/Ubuntu: apt install gnupg scdaemon pcscd libccid yubikey-manager
+# Fedora:        dnf install gnupg2 pcsc-lite yubikey-manager
+# Arch:          pacman -S gnupg pcsclite ccid yubikey-manager
+# macOS:         brew install gnupg pinentry-mac yubikey-manager
 ```
 
 After installing, verify your setup:
@@ -52,19 +52,35 @@ kdub doctor
 
 ### Tails OS
 
-Tails resets installed packages on reboot. After each boot:
+Automated setup with encrypted persistence:
 
 ```bash
-scripts/tails-install-deps.sh
+kdub tails download          # download + verify Tails ISO
+sudo kdub tails flash        # write to USB
+sudo kdub tails persist      # create encrypted persistence + pre-load kdub
 ```
 
-On first use, wire XDG directories into Tails persistent storage:
+After booting into Tails, unlock persistent storage, then:
 
 ```bash
-scripts/tails-setup-persistence.sh
+kdub doctor                  # verify Tails environment
+kdub init && kdub doctor     # set up kdub
 ```
 
 ## Quick start
+
+**Tails USB workflow (recommended for maximum security):**
+
+```bash
+# Prepare a Tails USB with encrypted persistence
+kdub tails download
+sudo kdub tails flash
+sudo kdub tails persist
+
+# Boot into Tails, then continue below
+```
+
+**Key generation and smart card provisioning:**
 
 ```bash
 # Initialize directories and config
@@ -158,11 +174,10 @@ kdub doctor [--json]
 
 | Dependency | Required | Notes |
 |------------|----------|-------|
-| `gpg` | Yes | GnuPG 2.2+ |
-| `gpg-agent` | Yes | Usually bundled with gpg |
+| `gpg` | Recommended | GnuPG 2.2+ (needed for: Git signing, encrypt/decrypt) |
+| `gpg-agent` | Recommended | Usually bundled with gpg (needed for: Agent ops, SSH) |
 | `scdaemon` | For card ops | Smart card daemon |
 | `pcscd` | For card ops | PC/SC service (running) |
-| `jq` | No | JSON processing |
 | `ykman` | No | YubiKey Manager (for touch policy, extended info) |
 
 **Example output:**
@@ -173,7 +188,6 @@ System check:
   gpg-agent    2.4.5     ok
   scdaemon     2.4.5     ok
   pcscd        running   ok
-  jq           1.7.1     ok
   ykman        5.4.0     ok
   YubiKey      5.4.3 NFC (serial: 12345678)
 
@@ -193,7 +207,6 @@ All checks passed.
     "gpg": { "version": "2.4.5", "status": "ok", "path": "/usr/bin/gpg" },
     "scdaemon": { "version": "2.4.5", "status": "ok", "path": "/usr/lib/gnupg/scdaemon" },
     "pcscd": { "status": "running" },
-    "jq": { "version": "1.7.1", "status": "ok", "path": "/usr/bin/jq" },
     "ykman": { "version": "5.4.0", "status": "ok", "path": "/usr/bin/ykman" }
   },
   "yubikey": {
@@ -264,6 +277,106 @@ hits the GitHub Releases API at most once every 24 hours (cached in
 KDUB_NO_UPDATE_CHECK=1 kdub doctor    # env var
 kdub --quiet doctor                   # quiet flag
 kdub doctor 2>/dev/null               # redirect stderr
+```
+
+---
+
+### `kdub tails download`
+
+Download and verify the latest Tails ISO image.
+
+```
+kdub tails download [OPTIONS]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--force` | Re-download even if cached |
+
+**Behavior:**
+
+- Downloads the latest Tails ISO from tails.net
+- Verifies GPG signature against hardcoded Tails signing key fingerprint
+- Verifies SHA256 checksum
+- Caches at `~/.cache/kdub/tails/tails-amd64-<VERSION>.img`
+- Re-uses cached ISO on subsequent runs unless `--force` is specified
+
+**Example:**
+
+```bash
+kdub tails download
+# Tails 7.5 verified and cached at ~/.cache/kdub/tails/tails-amd64-7.5.img
+```
+
+---
+
+### `kdub tails flash`
+
+Write a verified Tails image to a USB device.
+
+```
+kdub tails flash [OPTIONS]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--device <PATH>` | Use this device (skips interactive prompt) |
+| `--yes` | Skip typing device path confirmation |
+
+**Behavior:**
+
+- Lists removable USB devices with size and model
+- Requires typing the full device path to confirm (prevents wrong-device accidents)
+- Writes Tails image to USB with progress bar
+- Requires root/sudo
+
+**Example:**
+
+```bash
+sudo kdub tails flash
+# Removable devices:
+#   /dev/sdb   Samsung Flash Drive  14.9 GB  (not mounted)
+# Type the device path to write to: /dev/sdb
+# Writing Tails to /dev/sdb... done
+```
+
+---
+
+### `kdub tails persist`
+
+Create encrypted persistent storage on a Tails USB and pre-load kdub.
+
+```
+kdub tails persist [OPTIONS]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--passphrase <PASS>` | LUKS passphrase (visible in process listings) |
+| `--passphrase-stdin` | Read passphrase from stdin |
+| `--device <PATH>` | Target USB device |
+| `--skip-preseed` | Skip kdub config pre-seeding |
+
+**Linux only.** Requires `parted`, `cryptsetup`, `mkfs.ext4`, and root/sudo.
+
+**Behavior:**
+
+- Creates LUKS2-encrypted persistent partition on Tails USB
+- Generates or accepts a passphrase (same input chain as other kdub secrets)
+- Pre-loads kdub binary and configs into persistent storage
+- On macOS: prints guidance to use Tails Welcome Screen instead
+
+**Example:**
+
+```bash
+sudo kdub tails persist --device /dev/sdb
+# Auto-generate a strong LUKS passphrase? [Y/n] y
+# ==============================================
+#   LUKS PASSPHRASE - RECORD THIS NOW
+# ==============================================
+#   ABCDEFGHJKLMNPQRTVWX2346
+# ==============================================
+# Persistent storage created on /dev/sdb.
 ```
 
 ---
@@ -892,6 +1005,7 @@ ssh user@host
 
 | Scenario | Command |
 |----------|---------|
+| Prepare Tails USB | `kdub tails download && sudo kdub tails flash && sudo kdub tails persist` |
 | First time setup | `kdub init && kdub doctor` |
 | Create identity | `kdub key create "Name <email>"` |
 | Backup keys | `kdub key backup 0xKEYID` |
@@ -909,6 +1023,7 @@ ssh user@host
 | Smart card ops | Yes | Yes | Yes |
 | Ephemeral GNUPGHOME | /dev/shm (tmpfs) | /dev/shm or XDG_RUNTIME_DIR | RAM disk |
 | Touch policy | Yes (YK5+) | Yes (YK5+) | Yes (YK5+) |
+| Tails USB setup | Full | download+flash | download+flash only (persist: use Tails Welcome Screen) |
 
 ## YubiKey compatibility
 

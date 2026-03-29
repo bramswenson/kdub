@@ -82,3 +82,50 @@ pub fn check_stdin_conflicts(flags: &[(&str, bool)]) -> Result<(), KdubError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_stdin_conflicts_no_flags() {
+        let result =
+            check_stdin_conflicts(&[("--passphrase-stdin", false), ("--pin-stdin", false)]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn check_stdin_conflicts_single_active_ok() {
+        let result = check_stdin_conflicts(&[("--passphrase-stdin", true), ("--pin-stdin", false)]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn check_stdin_conflicts_multiple_active_error() {
+        let result = check_stdin_conflicts(&[("--passphrase-stdin", true), ("--pin-stdin", true)]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // Error message should mention both conflicting flags
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--passphrase-stdin") && msg.contains("--pin-stdin"),
+            "error should name both flags, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn check_stdin_conflicts_three_flags_two_active_error() {
+        let result = check_stdin_conflicts(&[
+            ("--passphrase-stdin", true),
+            ("--admin-pin-stdin", false),
+            ("--user-pin-stdin", true),
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn check_stdin_conflicts_empty_slice_ok() {
+        let result = check_stdin_conflicts(&[]);
+        assert!(result.is_ok());
+    }
+}
