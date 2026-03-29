@@ -45,12 +45,9 @@ tag-name = "v{{version}}" # tags like v0.1.0
 pre-release-commit-message = "release: v{{version}}"
 tag-message = "v{{version}}"
 pre-release-hook = [
-  "git",
-  "cliff",
-  "--output",
-  "CHANGELOG.md",
-  "--tag",
-  "v{{version}}",
+  "bash",
+  "-c",
+  "git cliff --output CHANGELOG.md --tag v{{version}} && git add CHANGELOG.md",
 ]
 publish = false # don't publish to crates.io (internal lib)
 push = true
