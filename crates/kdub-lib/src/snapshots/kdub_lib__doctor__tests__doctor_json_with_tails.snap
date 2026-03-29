@@ -1,0 +1,45 @@
+---
+source: crates/kdub-lib/src/doctor.rs
+expression: json
+---
+{
+  "config": {
+    "config_dir": "[TEMPDIR]/config",
+    "config_dir_exists": true,
+    "data_dir": "[TEMPDIR]/data",
+    "data_dir_exists": true,
+    "platform": "[PLATFORM]"
+  },
+  "dependencies": {
+    "gpg": {
+      "path": "/usr/bin/gpg",
+      "status": "ok",
+      "version": "2.4.5"
+    },
+    "gpg-agent": {
+      "path": "/usr/bin/gpg-agent",
+      "status": "ok",
+      "version": "2.4.5"
+    },
+    "pcscd": {
+      "status": "running"
+    },
+    "scdaemon": {
+      "path": "/usr/lib/gnupg/scdaemon",
+      "status": "ok",
+      "version": "2.4.5"
+    },
+    "ykman": {
+      "path": "/usr/bin/ykman",
+      "status": "ok",
+      "version": "5.4.0"
+    }
+  },
+  "status": "ok",
+  "tails": {
+    "kdub_on_persistent": true,
+    "network_connected": false,
+    "persistence_mounted": true,
+    "version": "7.5"
+  }
+}

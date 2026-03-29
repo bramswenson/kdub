@@ -21,12 +21,23 @@ directories.workspace = true
 ureq.workspace = true
 urlencoding.workspace = true
 sha1.workspace = true
+sha2.workspace = true
+memmap2.workspace = true
+plist.workspace = true
+zipsign-api.workspace = true
+flate2.workspace = true
+tar.workspace = true
 
 openpgp-card.workspace = true
 openpgp-card-rpgp.workspace = true
 card-backend-pcsc.workspace = true
+tempfile.workspace = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [dev-dependencies]
 tempfile.workspace = true
 mockall = "0.14"
 rstest = { workspace = true }
+insta = { version = "1", features = ["filters"] }

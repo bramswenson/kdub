@@ -244,6 +244,24 @@ fn init_with_tor_proxy_creates_dirmngr() {
     );
 }
 
+/// Verify that XDG_CONFIG_HOME with a `config` subdirectory name (not `config_home`)
+/// is also accepted and that `config/kdub/config.toml` is created there.
+#[test]
+fn init_with_xdg_config_home_override() {
+    let tmp = tempfile::tempdir().unwrap();
+    Command::cargo_bin("kdub")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", tmp.path().join("config"))
+        .env("XDG_DATA_HOME", tmp.path().join("data"))
+        .env("XDG_STATE_HOME", tmp.path().join("state"))
+        .env_remove("KDUB_TOR_PROXY")
+        .args(["init"])
+        .assert()
+        .success();
+    // Verify config was created at the overridden path
+    assert!(tmp.path().join("config/kdub/config.toml").exists());
+}
+
 // ---------------------------------------------------------------------------
 // completions command integration tests
 // ---------------------------------------------------------------------------

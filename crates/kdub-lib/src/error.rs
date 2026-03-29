@@ -48,6 +48,14 @@ pub enum KdubError {
     Cancelled,
     #[error("not yet implemented: {0}")]
     NotImplemented(&'static str),
+    #[error("tails download error: {0}")]
+    TailsDownload(String),
+    #[error("tails flash error: {0}")]
+    TailsFlash(String),
+    #[error("tails persist error: {0}")]
+    TailsPersist(String),
+    #[error("tails: unsupported on this platform: {0}")]
+    TailsUnsupported(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -77,6 +85,10 @@ impl KdubError {
             Self::MissingDependency(_) => 3,
             Self::Cancelled => 6,
             Self::EphemeralDir(_) => 1,
+            Self::TailsDownload(_) => 1,
+            Self::TailsFlash(_) => 1,
+            Self::TailsPersist(_) => 1,
+            Self::TailsUnsupported(_) => 2,
             Self::Io(_) => 1,
         }
     }
@@ -236,5 +248,61 @@ mod tests {
     #[test]
     fn exit_code_cancelled() {
         assert_eq!(KdubError::Cancelled.exit_code(), 6);
+    }
+
+    #[test]
+    fn display_tails_download() {
+        let err = KdubError::TailsDownload("connection refused".into());
+        assert_eq!(err.to_string(), "tails download error: connection refused");
+    }
+
+    #[test]
+    fn exit_code_tails_download() {
+        assert_eq!(
+            KdubError::TailsDownload("connection refused".into()).exit_code(),
+            1
+        );
+    }
+
+    #[test]
+    fn display_tails_flash() {
+        let err = KdubError::TailsFlash("device busy".into());
+        assert_eq!(err.to_string(), "tails flash error: device busy");
+    }
+
+    #[test]
+    fn exit_code_tails_flash() {
+        assert_eq!(KdubError::TailsFlash("device busy".into()).exit_code(), 1);
+    }
+
+    #[test]
+    fn display_tails_persist() {
+        let err = KdubError::TailsPersist("cryptsetup failed".into());
+        assert_eq!(err.to_string(), "tails persist error: cryptsetup failed");
+    }
+
+    #[test]
+    fn exit_code_tails_persist() {
+        assert_eq!(
+            KdubError::TailsPersist("cryptsetup failed".into()).exit_code(),
+            1
+        );
+    }
+
+    #[test]
+    fn display_tails_unsupported() {
+        let err = KdubError::TailsUnsupported("persist requires Linux".into());
+        assert_eq!(
+            err.to_string(),
+            "tails: unsupported on this platform: persist requires Linux"
+        );
+    }
+
+    #[test]
+    fn exit_code_tails_unsupported() {
+        assert_eq!(
+            KdubError::TailsUnsupported("persist requires Linux".into()).exit_code(),
+            2
+        );
     }
 }
