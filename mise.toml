@@ -47,6 +47,19 @@ echo "DONE. Remember to commit the public key:"
 echo "  git add $PUBLIC_KEY && git commit -m 'chore: add zipsign public key'"
 """
 
+[tasks.release]
+description = "Create a release (generates changelog, tags, pushes, triggers CI build)"
+usage = '''
+arg "<version>" help="Version to release (e.g. 0.1.0)"
+'''
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Releasing v${usage_version}..."
+HK_SKIP_STEPS=no-commit-to-branch cargo release "${usage_version}" --no-confirm --execute
+"""
+
 [tasks."actions:pin"]
 description = "Pin all GitHub Actions to latest SHA hashes and verify with zizmor"
 run = """
