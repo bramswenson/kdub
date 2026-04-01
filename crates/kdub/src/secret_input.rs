@@ -10,6 +10,10 @@ use secrecy::{ExposeSecret, SecretString};
 /// 3. Environment variable (`env_var_name`)
 /// 4. Interactive prompt (using `dialoguer::Password`)
 ///
+/// When `confirm` is true, the interactive prompt asks the user to type
+/// the secret twice. Use this when setting a new passphrase (key create,
+/// persist), not when entering an existing one (backup, provision).
+///
 /// In batch mode, returns an error if no value is available from
 /// steps 1-3 (interactive prompting is not allowed).
 pub fn resolve_secret<T: std::str::FromStr<Err = ParseError>>(
@@ -18,6 +22,28 @@ pub fn resolve_secret<T: std::str::FromStr<Err = ParseError>>(
     env_var_name: &str,
     prompt: &str,
     batch: bool,
+) -> Result<T, KdubError> {
+    resolve_secret_inner(flag_value, stdin_flag, env_var_name, prompt, batch, false)
+}
+
+/// Like [`resolve_secret`] but with confirmation prompting for new secrets.
+pub fn resolve_secret_confirmed<T: std::str::FromStr<Err = ParseError>>(
+    flag_value: Option<&str>,
+    stdin_flag: bool,
+    env_var_name: &str,
+    prompt: &str,
+    batch: bool,
+) -> Result<T, KdubError> {
+    resolve_secret_inner(flag_value, stdin_flag, env_var_name, prompt, batch, true)
+}
+
+fn resolve_secret_inner<T: std::str::FromStr<Err = ParseError>>(
+    flag_value: Option<&str>,
+    stdin_flag: bool,
+    env_var_name: &str,
+    prompt: &str,
+    batch: bool,
+    confirm: bool,
 ) -> Result<T, KdubError> {
     // 1. CLI flag
     if let Some(val) = flag_value {
@@ -44,10 +70,15 @@ pub fn resolve_secret<T: std::str::FromStr<Err = ParseError>>(
         ));
     }
 
-    let input = dialoguer::Password::new()
-        .with_prompt(prompt)
-        .interact()
-        .map_err(|e| KdubError::Io(std::io::Error::other(e)))?;
+    let input = if confirm {
+        dialoguer::Password::new()
+            .with_prompt(prompt)
+            .with_confirmation("Confirm passphrase", "Passphrases don't match, try again")
+            .interact()
+    } else {
+        dialoguer::Password::new().with_prompt(prompt).interact()
+    }
+    .map_err(|e| KdubError::Io(std::io::Error::other(e)))?;
 
     input.parse::<T>().map_err(KdubError::Parse)
 }

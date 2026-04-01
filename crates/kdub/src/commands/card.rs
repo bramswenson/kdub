@@ -162,7 +162,19 @@ fn run_setup(args: &CardSetupArgs, global: &GlobalOpts) -> CmdResult {
             "generate random (6 digits)"
         }
     );
-    if let Some(ref identity) = args.identity {
+    // Resolve --identity: if it looks like a fingerprint or key ID, look up
+    // the actual identity string (e.g. "Name <email>") from the metadata store.
+    let resolved_identity = if let Some(ref query) = args.identity {
+        let data_dir = resolve_data_dir(global)?;
+        match kdub_lib::identity::find_identity(&data_dir, query) {
+            Ok(meta) => Some(meta.identity),
+            Err(_) => Some(query.clone()), // fallback to raw string if not found
+        }
+    } else {
+        None
+    };
+
+    if let Some(ref identity) = resolved_identity {
         let name = card_setup::identity_to_cardholder_name(identity);
         println!("  Cardholder:    {name}");
     }
@@ -184,7 +196,7 @@ fn run_setup(args: &CardSetupArgs, global: &GlobalOpts) -> CmdResult {
         new_admin_pin,
         new_user_pin,
         skip_kdf: args.skip_kdf,
-        identity: args.identity.clone(),
+        identity: resolved_identity,
         url: args.url.clone(),
     };
 

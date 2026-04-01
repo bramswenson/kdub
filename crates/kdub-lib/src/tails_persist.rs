@@ -514,6 +514,10 @@ impl TailsSystemDeps for LinuxTailsSystemDeps {
         sudo_mkdir_chown(&mount_point.join("Persistent"), "700", 1000, 1000)?;
         sudo_mkdir_chown(&mount_point.join("gnupg"), "700", 1000, 1000)?;
         sudo_mkdir_chown(&mount_point.join("dotfiles"), "700", 1000, 1000)?;
+        // kdub/ is mounted as ~/.local/share/kdub/ via persistence.conf.
+        // Unlike dotfiles (which only symlinks individual files), this is a
+        // full directory mount so backups/ and identities/ subdirs persist.
+        sudo_mkdir_chown(&mount_point.join("kdub"), "700", 1000, 1000)?;
 
         debug!("persistence directory layout created");
         Ok(())
@@ -714,7 +718,13 @@ fn populate_persistence(
 ) -> Result<(), KdubError> {
     debug!(?mount_point, "populating persistence volume");
 
-    // Create subdirectories under dotfiles (parent dotfiles/ created by setup_persistence_layout)
+    // Create subdirectories under dotfiles (parent dotfiles/ created by setup_persistence_layout).
+    // Tails symlinks individual files from dotfiles/* into $HOME:
+    //   ~/.local/bin/kdub           (the binary)
+    //   ~/.config/kdub/config.toml  (config file)
+    // Note: kdub data (backups, identities) uses a separate persistence.conf
+    // entry (source=kdub) mounted at ~/.local/share/kdub/ — dotfiles' file-level
+    // symlinking can't handle directories created at runtime.
     let dotfiles_bin_dir = mount_point.join("dotfiles/.local/bin");
     let dotfiles_config_dir = mount_point.join("dotfiles/.config/kdub");
 

@@ -19,3 +19,5 @@ ignore:
   - "crates/kdub/src/updater.rs"
   # CLI tails handlers — interactive prompts, sudo escalation, progress bars
   - "crates/kdub/src/commands/tails.rs"
+  # Secret input — interactive dialoguer prompts, stdin reading
+  - "crates/kdub/src/secret_input.rs"
