@@ -122,7 +122,18 @@ pub fn identity_to_cardholder_name(identity: &str) -> String {
 
     let last = parts.last().unwrap_or(&"");
     let first = parts[..parts.len() - 1].join(" ");
-    format!("{last}<<{first}")
+    let name = format!("{last}<<{first}");
+    // OpenPGP cards limit cardholder name to 39 bytes (ISO 7501-1).
+    // Truncate on a char boundary to avoid splitting multi-byte UTF-8.
+    if name.len() > 39 {
+        let mut end = 39;
+        while end > 0 && !name.is_char_boundary(end) {
+            end -= 1;
+        }
+        name[..end].to_string()
+    } else {
+        name
+    }
 }
 
 /// Execute the card setup sequence.

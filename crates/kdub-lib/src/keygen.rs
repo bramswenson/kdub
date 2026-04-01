@@ -1,5 +1,6 @@
 use pgp::composed::{EncryptionCaps, SecretKeyParamsBuilder, SubkeyParamsBuilder};
 use pgp::composed::{KeyType as PgpKeyType, SecretKeyParams};
+use pgp::crypto::ecc_curve::ECCCurve;
 use pgp::types::KeyDetails;
 use rand::{CryptoRng, Rng};
 
@@ -33,10 +34,15 @@ pub fn generate_key<R: Rng + CryptoRng>(
     // Map our KeyType to rPGP key types
     let (primary_type, sign_type, encrypt_type, auth_type) = match key_type {
         KeyType::Ed25519 => (
-            PgpKeyType::Ed25519,
-            PgpKeyType::Ed25519,
-            PgpKeyType::X25519,
-            PgpKeyType::Ed25519,
+            // Use legacy v4 format (EdDSA + ECDH with curve OIDs) instead of
+            // v6 native Ed25519/X25519. The openpgp-card-rpgp 0.7 bridge only
+            // supports Ed25519Legacy for card import — v6 Ed25519 fails with
+            // "Unsupported key material". Legacy format is universally supported
+            // by GnuPG, YubiKeys, and all OpenPGP implementations.
+            PgpKeyType::Ed25519Legacy,
+            PgpKeyType::Ed25519Legacy,
+            PgpKeyType::ECDH(ECCCurve::Curve25519),
+            PgpKeyType::Ed25519Legacy,
         ),
         KeyType::Rsa4096 => (
             PgpKeyType::Rsa(4096),

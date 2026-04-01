@@ -95,6 +95,7 @@ pub const TAILS_MIN_USB_SIZE_BYTES: u64 = 8_000_000_000;
 pub const TAILS_PERSISTENCE_CONF_ENTRIES: &[(&str, &str)] = &[
     ("/home/amnesia", "source=dotfiles,link"),
     ("/home/amnesia/.gnupg", "source=gnupg"),
+    ("/home/amnesia/.local/share/kdub", "source=kdub"),
     ("/home/amnesia/Persistent", "source=Persistent"),
 ];
 

@@ -38,10 +38,12 @@ fn main() -> eyre::Result<ExitCode> {
     };
 
     // Tracing subscriber: verbosity from --verbose / --quiet
+    // Suppress noisy rPGP internal warnings (packet header mismatch) at
+    // default verbosity. Only show them at debug (-vv) or higher.
     let filter = match (cli.global.quiet, cli.global.verbose) {
         (true, _) => "error",
-        (_, 0) => "warn",
-        (_, 1) => "info",
+        (_, 0) => "warn,pgp=error",
+        (_, 1) => "info,pgp=warn",
         (_, 2) => "debug",
         _ => "trace",
     };

@@ -227,15 +227,16 @@ ID=ubuntu
     fn generate_persistence_conf_format() {
         let conf = generate_persistence_conf();
         let lines: Vec<&str> = conf.lines().collect();
-        assert_eq!(lines.len(), 3);
+        assert_eq!(lines.len(), 4);
         for line in &lines {
             let parts: Vec<&str> = line.split('\t').collect();
             assert_eq!(parts.len(), 2, "each line must be tab-separated: {line}");
         }
-        // Verify all 3 destination paths are present
+        // Verify all 4 destination paths are present
         let expected_destinations = [
             "/home/amnesia",
             "/home/amnesia/.gnupg",
+            "/home/amnesia/.local/share/kdub",
             "/home/amnesia/Persistent",
         ];
         for dest in &expected_destinations {

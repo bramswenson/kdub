@@ -200,7 +200,7 @@ fn check_and_notify(writer: &mut impl Write, cache_base: &Path) {
                 v
             }
             None => {
-                tracing::warn!("unable to determine latest version (network fetch failed)");
+                tracing::debug!("unable to determine latest version (network fetch failed)");
                 return;
             }
         }

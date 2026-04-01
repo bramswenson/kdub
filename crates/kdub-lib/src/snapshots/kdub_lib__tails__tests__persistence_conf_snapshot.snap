@@ -4,4 +4,5 @@ expression: conf
 ---
 /home/amnesia	source=dotfiles,link
 /home/amnesia/.gnupg	source=gnupg
+/home/amnesia/.local/share/kdub	source=kdub
 /home/amnesia/Persistent	source=Persistent

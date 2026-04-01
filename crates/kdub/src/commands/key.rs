@@ -200,7 +200,7 @@ fn resolve_passphrase(args: &KeyCreateArgs, batch: bool) -> Result<(Passphrase, 
     // Interactive mode, no explicit input: try interactive prompt.
     // Only auto-generate if dialoguer is not available (NotImplemented).
     // Do NOT auto-generate on IO errors (Ctrl+C, broken pipe) — those are real failures.
-    match secret_input::resolve_secret::<Passphrase>(
+    match secret_input::resolve_secret_confirmed::<Passphrase>(
         None,
         false,
         "KDUB_PASSPHRASE",
